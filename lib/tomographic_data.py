@@ -137,3 +137,73 @@ def crop_image(filename, size):
     elif (np.amax(crop_img)) > 1:
         crop_img = crop_img/255;
     return crop_img;
+
+
+
+
+
+def Aligning_images(img, ref_point, shift = None):
+    r"""
+    Input:
+        image: Ndarray
+            It could be a single image or a 3D array of images.
+        
+        ref_point: Ndarray
+            It is an array of points (rows = 3, cols = 2) for Affine transformation.
+            example = [[x0,y0], [x1,y1], [x2,y2]]
+        
+        shift:
+            list [x_shift, y_shift] of shift in x and y axis from reference image.
+            If slices are more than one than shift will be divided into slices.
+    Return:
+        It returns the aligned image or image stack   
+    """
+    
+    img = img.copy();
+    dims = img.shape;
+    
+    if len(dims)==3:
+            no_of_slices, rows, cols = img.shape;
+    elif len(dims)==2:
+            rows, cols = img.shape;
+            no_of_slices = 1;
+            
+    if (np.size(ref_point) != 6):
+        print("Reference point array's dimensions are not correct \n");
+        print('It should be in the form of [[x0,y0], [x1,y1], [x2,y2]]');
+        return 0;
+    
+    
+    diffx, diffy = shift
+    
+    thetax = math.asin(diffx/no_of_slices)
+    thetay = math.asin(diffy/no_of_slices)
+
+    transform_matrix = np.ndarray((no_of_slices,2))
+    
+    #reference points of first image
+    pt1 = np.float32(ref_point)    
+    
+    align_img = [];
+ 
+    for i in range(no_of_slices):
+        transform_matrix[i][0] = int(i * math.sin(thetax)) #shift in X
+        transform_matrix[i][1] = int(i * math.sin(thetay)) #shift in Y   
+        
+        if len(dims) == 2:
+            img_2_transform = img;
+        else:
+            img_2_transform = img[i,:,:];
+            
+        #Points for affine transformation
+        pt2 = np.float32([[pt1[0,0]+transform_matrix[i][0],pt1[0,1]+transform_matrix[i][1]],
+                          [pt1[1,0]+transform_matrix[i][0],pt1[1,1]+transform_matrix[i][1]],
+                          [pt1[2,0]+transform_matrix[i][0],pt1[2,1]+transform_matrix[i][1]]])
+
+        matrix = cv2.getAffineTransform(pt1, pt2)
+        align_img.append(cv2.warpAffine(img_2_transform, matrix, (col, row)));
+    
+    align_array = np.reshape(align_img, dims);
+
+    return align_array
+
