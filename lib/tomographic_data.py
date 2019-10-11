@@ -204,7 +204,7 @@ def Aligning_images(img, ref_point, shift = None):
                           [pt1[2,0]+transform_matrix[i][0],pt1[2,1]+transform_matrix[i][1]]])
 
         matrix = cv2.getAffineTransform(pt1, pt2)
-        align_img.append(cv2.warpAffine(img_2_transform, matrix, (col, row)));
+        align_img.append(cv2.warpAffine(img_2_transform, matrix, (cols, rows)));
     
     align_array = np.reshape(align_img, dims);
 
