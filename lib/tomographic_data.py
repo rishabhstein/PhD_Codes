@@ -11,11 +11,23 @@ import os
 import cv2
 import math
 
-def makeF(data, name='F', num=0,):
+def makeF(data, case = None, name='F', num=0,):
+    '''
+    This function creates the F0 file for porousFoam
+    Input:
+        data: nd-array as porosity field
+        case: '2D' or '3D'
+    '''
+    
     
     N = np.size(data)
     data = np.reshape(data,(N,),order='F')
     
+    if case == '2D':
+        os.system('cd 0.org && cp Forg2Dcyclic Forg')
+    elif case == '3D':
+        os.system('cd 0.org && cp Forg3DzeroGrad Forg')    
+        
     fr = open('0.org/'+name+'org')
     fw = open('0.org/'+name+str(num), 'w')
     
@@ -28,6 +40,7 @@ def makeF(data, name='F', num=0,):
     data = np.array(data,float)
     fw.write('internalField   nonuniform List<scalar>\n')  
     fw.write(str(N) + '\n(\n')
+    
     for k in range(N):
         if data[k] == 1.0:
             fw.write(str(0.99) + '\n')
@@ -75,9 +88,17 @@ def calculate_porosity(img, img_grid_info, start):
 
 
 def get_porosity(img, Nx = 1, Ny = 1, Nz = 1):
-    """This function takes an image/stack_image as input and
+    """
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    If Input Image is binary and pores are black then
+    porosity = 1 - sum of intensity of white pixels
+    If pores are white then
+    porosity = sum of intensity of white pixels
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    This function takes an image/stack_image as input and
     return an array of scaled porosity field for whole geometry
-    for given mesh numbers in x,y,z direction respectively"""
+    for given mesh numbers in x,y,z direction respectively
+    """
     dims = np.shape(img);
     if len(dims) == 3:
         size_x, size_y, size_z = np.shape(img);
@@ -94,13 +115,13 @@ def get_porosity(img, Nx = 1, Ny = 1, Nz = 1):
             return 0;
         
         img_grid_info = [axial_fraction_x, axial_fraction_y, axial_fraction_z];
-        a = np.zeros([Nx,Ny,Nz]);
+        pore_matrix = np.zeros([Nx,Ny,Nz]);
         for i in range(Nx):
             for j in range(Ny):
                 for k in range(Nz):
                     loc = [i, j, k];   
-                    a[i,j,k] = calculate_porosity(img, img_grid_info, loc)       
-        return (a, np.sum(a)/np.size(a));
+                    pore_matrix[i,j,k] = calculate_porosity(img, img_grid_info, loc)       
+        return (pore_matrix, np.sum(pore_matrix)/np.size(pore_matrix));
     
     elif len(dims) == 2:
         size_x, size_y = np.shape(img);        
@@ -114,13 +135,13 @@ def get_porosity(img, Nx = 1, Ny = 1, Nz = 1):
             return 0;
         
         img_grid_info = [axial_fraction_x, axial_fraction_y];
-        a = np.zeros([Nx,Ny]);
+        pore_matrix = np.zeros([Nx,Ny]);
 
         for i in range(Nx):
             for j in range(Ny):
                 loc = [i, j];   
-                a[i,j] = calculate_porosity(img, img_grid_info, loc)       
-        return (a, np.sum(a)/np.size(a));
+                pore_matrix[i,j] = calculate_porosity(img, img_grid_info, loc)       
+        return (pore_matrix, np.sum(pore_matrix)/np.size(pore_matrix));
 
 
 
@@ -144,9 +165,11 @@ def crop_image(filename, size):
 
 
 
-
 def Aligning_images(img, ref_point, shift = None):
-    r"""
+    """
+    =============Still Untested=============
+    
+    
     Input:
         image: Ndarray
             It could be a single image or a 3D array of images.
@@ -209,4 +232,3 @@ def Aligning_images(img, ref_point, shift = None):
     align_array = np.reshape(align_img, dims);
 
     return align_array
-
