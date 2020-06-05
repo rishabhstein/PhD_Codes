@@ -39,30 +39,33 @@ def load_ARM_data(path, prefix = '', time = 'First', file_type = '.out'):
             count_steps.extend([i+1 for i in range(len(data)) if data[i][0]=='#'])
             step_len = count_steps[1] - count_steps[0] - 1 
 
-            if(time == 'first'):
+            if(time == 'First'):
                 for i in range(count_steps[0], step_len + count_steps[0]):
                     dia.extend(data[i].strip('\t').split())
-            elif(time == 'last'):
+            elif(time == 'Second'):
+                for i in range(count_steps[1], step_len + count_steps[1]):
+                    dia.extend(data[i].strip('\t').split()) 
+            elif(time == 'Last'):
                 for i in range(count_steps[-1], step_len + count_steps[-1]-1):
                     dia.extend(data[i].strip('\t').split())
-
+           
         network['diameter'] = np.vstack([float(i) for i in dia])
 
-        file= Path(path.resolve(), 'l' + prefix +'.out')
-        lth = []; count_steps = [];
-        with open(file,'r') as f:
-            data = f.readlines()
-            count_steps.extend([i+1 for i in range(len(data)) if data[i][0]=='#'])
-            step_len = count_steps[1] - count_steps[0] - 1 
+#         file= Path(path.resolve(), 'l' + prefix +'.out')
+#         lth = []; count_steps = [];
+#         with open(file,'r') as f:
+#             data = f.readlines()
+#             count_steps.extend([i+1 for i in range(len(data)) if data[i][0]=='#'])
+#             step_len = count_steps[1] - count_steps[0] - 1 
 
-            if(time == 'first'):
-                for i in range(count_steps[0], step_len + count_steps[0]):
-                    lth.extend(data[i].strip('\t').split())
-            elif(time == 'last'):
-                for i in range(count_steps[-1], step_len + count_steps[-1]-1):
-                    lth.extend(data[i].strip('\t').split())
+#             if(time == 'First'):
+#                 for i in range(count_steps[0], step_len + count_steps[0]):
+#                     lth.extend(data[i].strip('\t').split())
+#             elif(time == 'Last'):
+#                 for i in range(count_steps[-1], step_len + count_steps[-1]-1):
+#                     lth.extend(data[i].strip('\t').split())
 
-        network['length'] = np.vstack([float(i) for i in lth])
+#        network['length'] = np.vstack([float(i) for i in lth])
 
         file= Path(path.resolve(), 'q' + prefix +'.out')
         q = []; count_steps = [];
@@ -71,15 +74,28 @@ def load_ARM_data(path, prefix = '', time = 'First', file_type = '.out'):
             count_steps.extend([i+1 for i in range(len(data)) if data[i][0]=='#'])
             step_len = count_steps[1] - count_steps[0] - 1 
 
-            if(time == 'first'):
+            if(time == 'First'):
                 for i in range(count_steps[0], step_len + count_steps[0]):
                     q.extend(data[i].strip('\t').split())
-            elif(time == 'last'):
+            if(time == 'Second'):
+                for i in range(count_steps[1], step_len + count_steps[1]):
+                    q.extend(data[i].strip('\t').split())            
+            elif(time == 'Last'):
                 for i in range(count_steps[-1], step_len + count_steps[-1]-1):
                     q.extend(data[i].strip('\t').split())
 
         network['flow_rate'] = np.vstack([float(i) for i in q])
-    
+        
+        #""" Trimming the zero diameter pores and related flow_rates if any """ 
+
+        trim_pores = np.where(np.any(network['diameter'] == 0, axis = 1))[0]
+        dia_after_trimming = np.delete(network['diameter'], trim_pores, axis=0)
+        flow_after_trimming = np.delete(network['flow_rate'], trim_pores, axis=0)
+
+        network['diameter'] = np.vstack(dia_after_trimming)
+        network['flow_rate'] =np.vstack(flow_after_trimming)
+
+
     elif (file_type == '.csv'):
         import pandas as pd
         file = Path(path.resolve(), 'data'+ prefix +'.csv')
@@ -99,3 +115,47 @@ def load_ARM_data(path, prefix = '', time = 'First', file_type = '.out'):
 
     return network
 
+
+def ARM_VTKtoCSV(path_to_fileIn, path_to_fileOut, fname):
+    import vtk
+    import csv
+    """This function converts the VTK Polydata file to 
+    CSV files. 
+    
+    Currently save only Diameter and Flow_Rate
+    
+    
+    Input: 
+        path to file.vtk
+        path to file.csv
+        file name
+    Output:
+        Save file.csv to path_to_fileOut/file.csv
+    
+    """
+    fileIn  = Path(path_to_fileIn.resolve(), fname)
+    fileOut  = Path(path_to_fileOut.resolve(), fname.replace('.vtk', '.csv'))
+    reader = vtk.vtkDataSetReader()
+    reader.SetFileName(str(fileIn))
+    reader.ReadAllScalarsOn()
+    reader.Update()
+    
+    cell_obj = reader.GetOutput()
+
+    points = cell_obj.GetPoints()
+
+    dia = cell_obj.GetCellData().GetArray('Diameter')
+    flow = cell_obj.GetCellData().GetArray('Flow_Rate')
+
+    table = vtk.vtkDataObjectToTable()
+    table.SetInputData(cell_obj)
+    table.Update()
+    table.GetOutput().AddColumn(dia)
+    table.GetOutput().AddColumn(flow)
+    table.Update()
+
+    writer = vtk.vtkDelimitedTextWriter()
+    writer.SetInputConnection(table.GetOutputPort())
+    writer.SetFileName(str(fileOut))
+    writer.Update()
+    writer.Write()    
