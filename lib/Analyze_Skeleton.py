@@ -31,8 +31,26 @@ class Analyze_Skeleton:
         self.length_of_wormhole = 0;
         self.suffix = suffix
         self.dominant_wormhole = []
+        self.isolated_nodes = []
         
         
+    def _Longest_branch_in_loop(self, junction_nodes):
+        
+        #Protected functions which return the largest branch in the loop
+
+        tmp_ln = 0;
+        source = 0;
+        sync = 0;
+        for i,j in itertools.combinations(junction_nodes, 2):
+            shortest_path_ln = nx.shortest_path_length(self.G,  i, j)
+                #Specific case to breaking the Longest branch
+            if tmp_ln < shortest_path_ln:
+                tmp_ln = shortest_path_ln
+                source = i; sync = j;
+        return [source,sync]
+
+
+
     def Skeletonized_image_to_NetworkX_Graph(self):
         
         #This function convert skeletonized image to NetworkX graph
@@ -50,22 +68,42 @@ class Analyze_Skeleton:
       
             self.node_cordinates = node_cordinates_copy
         
-        # Setting the position of nodes in the NetworkX Graph for 2D or 3D    
-        self.pos = {i: (self.node_cordinates[i,0], self.node_cordinates[i,1], self.node_cordinates[i,2]) for i in range(len(self.node_cordinates))}
-           
+        # Setting the position of nodes in the NetworkX Graph for 2D or 3D 
+
+        if len(self.node_cordinates) != np.shape(self.node_connection)[0]:
+            print("WARNING:: Different shapes of node_cordinates and node_connection ")
+            print("Number of nodes are: " + str(len(self.node_cordinates)) + 
+                " and shape of node_connection matrix is: ", str(np.shape(self.node_connection)))
+            self.pos = {i: (self.node_cordinates[i,0], self.node_cordinates[i,1], self.node_cordinates[i,2]) 
+                                    for i in range(np.shape(self.node_connection)[0])}
+        else:
+            self.pos = {i: (self.node_cordinates[i,0], self.node_cordinates[i,1], self.node_cordinates[i,2]) 
+                        for i in range(len(self.node_cordinates))}
+
         for n, p in self.pos.items():
             self.G.nodes[n]['pos'] = p
 
             
     def Remove_isolated_nodes(self):
+        
+        #This function delete the isolated nodes and return it
+
         G_copy = self.G
-        isolated_nodes = list(nx.isolates(G_copy))
-        G_copy.remove_nodes_from(isolated_nodes)
+        self.isolated_nodes = list(nx.isolates(G_copy))
+        G_copy.remove_nodes_from(self.isolated_nodes)
         self.G = G_copy            
-        return isolated_nodes
+        return self.isolated_nodes
             
-    def Nx_to_vtk(self, isolated_nodes = [], addtional_suffix = ''): 
-    # set node positions 
+    def Nx_to_vtk(self, addtional_suffix = ''): 
+        """
+        This function is written using VTK module
+        Input:
+            1. Network graph G
+            2. isolated_nodes from "Remove_isolated_nodes" method to avoid the data error by fillinf zeros there
+            3. Suffix (string) to save name of files
+
+        """
+
         np={} 
        
         node_pos = self.pos
@@ -90,7 +128,7 @@ class Analyze_Skeleton:
      
         #Filling zeros at deleted nodes
         try:
-            for i in isolated_nodes:
+            for i in self.isolated_nodes:
                 points.InsertPoint(int(i),0,0,0)
         except:
             pass
@@ -115,8 +153,22 @@ class Analyze_Skeleton:
         writer.Write()
 
     def Delete_Loops_from_Skeleton(self):
+        """
+            This function delete loops from the main skeleton in following ways:
+            1. If loop is a part of the main Wormhole then the largest branch between 
+            source and sync node will be cut at sync node
+
+            2. If loop is not a part of wormhole and contains only 2 junction nodes 
+            then the longest branch will be cut at Sync node
+            
+            3. If loop is not a part of wormhole and contains 3 or more junction nodes 
+            then the longest branch will be cut at Sync node 
+
+
+        """
         #It's better to find the dominant wormhole first
         self.Find_Dominant_Wormhole()
+
         try:
             if_main_wormhole_path = False
             
@@ -130,14 +182,19 @@ class Analyze_Skeleton:
                 if u in self.dominant_wormhole:
                     if_main_wormhole_path = True
 
-            shortes_path = []
+            shortest_path = []
 
             if(if_main_wormhole_path == False):
                 if (len(junction_nodes) > 2):
                     for i,j in itertools.combinations(junction_nodes, 2):
-                        shortes_path = nx.shortest_path(self.G,  i, j)
-                        if len([w for w in junction_nodes if w in shortes_path]) > 2:
+                        shortest_path = nx.shortest_path(self.G,  i, j)
+                        if len([w for w in junction_nodes if w in shortest_path]) > 2:
                             loop_source_sync.extend([i,j])
+                            break;
+                        else:
+                            #Specific case to breaking the Longest branch
+                            loop_source_sync.extend(self._Longest_branch_in_loop(junction_nodes)) 
+                            break;
                 else:
                     loop_source_sync = junction_nodes
 
@@ -146,8 +203,8 @@ class Analyze_Skeleton:
                     if (len(junction_nodes) > 2):
                         for i,j in itertools.combinations(junction_nodes, 2):
                             if i in self.dominant_wormhole and j in self.dominant_wormhole:
-                                shortes_path = nx.shortest_path(self.G,  i, j)
-                                if len([w for w in junction_nodes if w in shortes_path]) > 2:
+                                shortest_path = nx.shortest_path(self.G,  i, j)
+                                if len([w for w in junction_nodes if w in shortest_path]) > 2:
                                     loop_source_sync.extend([i,j])
                                     break;
                                 else:
@@ -177,35 +234,75 @@ class Analyze_Skeleton:
             print('No cycle found.')
 
                     
-                
-                
+        
+        
     def Find_Dominant_Wormhole(self):
-        
-        
-        #This function is works best for 3D images, because of uncertainity in choosing
+        #This function works best for 3D images, because of uncertainity in choosing
         # Inlet and Outlet node in 2D
         #No. of slices should be in Z-Axis (i.e First axis here)
         
+        print("Finding dominant wormhole")
+        outlet_node_found = False
+        inlet_in_isolated_node = False
         
+        
+        non = len(self.node_cordinates) #non of total nodes
+        
+        print("%=====================Looking for Inlet node=========================%\n")
         inletz, _, _ = np.argmin(self.node_cordinates, axis=0)
-        outletz, _, _ = np.argmax(self.node_cordinates, axis=0)
         
-        #NetworkX starts number of nodes from 1 so
-        inletz = inletz+1
+        if inletz in self.isolated_nodes: 
+            print("Node-" + str(inletz) + "is not connected to main wormhole")
+            inlet_in_isolated_node = True
+            tmp_io = 0;
+            
+        while (inlet_in_isolated_node):
+            
+            tmp_io += 1 ;
+            inletz = tmp_io + np.argmin(self.node_cordinates[tmp_io:non, 0]) #tmp_ioo is added because location of minimum z is always zero if element is excluded
 
-        self.inlet_node = inletz
-        self.outlet_node = outletz
-        
+            if inletz in self.isolated_nodes: 
+                print("Node-" + str(inletz) + "is not connected to main wormhole")
+                inlet_in_isolated_node = True
+            else:
+                print("Node-"+ str(inletz) + " is connected and chosen as source node")
+                inlet_in_isolated_node = False
+                break;
+      
+        print("%=====================Looking for Outlet node=========================%\n")     
+        i = 0;
+        while (outlet_node_found == False and i < 30):
+                
+            try:
+                outletz = np.argmax(self.node_cordinates[0:non, 0])
+                nx.shortest_path(self.G, inletz,  outletz)
+                outlet_node_found = True
+                print("\n Node-"+ str(outletz) + " is connected and chosen as outlet node")
+                
+            except Exception:
+                print("Node-" + str(non) + " is not connected to Node-" + str(inletz))
+                non -= 1;  i += 1;
+                
+        self.inlet_node = inletz;
+        self.outlet_node = outletz;       
+                
         self.dominant_wormhole = nx.shortest_path(self.G, inletz,  outletz)
         self.length_of_wormhole = nx.shortest_path_length(self.G, inletz,  outletz, weight='weight')
         return self.length_of_wormhole, self.dominant_wormhole
         
     def Tortuosity(self):
+        """This function calculates the Tortuosity of the dominant wormhole
+        
+                        Actual length (through branching)
+        Tortuosity =    -----------------------------------
+                        Minimum length between inlet and outlet
+
+
+        """
         return self.length_of_wormhole/self.node_cordinates[self.outlet_node][0]        
         
     def Wastefulness(self):
-        #Using sum of sparce matrix but every connection is doubled so
-        #divide by half
+        #Using sum of sparce matrix but every connection is doubled so dividee by half
         sum_of_all_branches_including_wormhole = self.node_connection.sum()/2
         return sum_of_all_branches_including_wormhole/self.node_cordinates[self.outlet_node][0]
         
