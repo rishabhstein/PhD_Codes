@@ -25,7 +25,7 @@ def create_porosity_roughness(dims, porosity = 1, noise = 1):
     return data
 
 
-def porosity_profile(img, axis = None, sample_type = None, void_fraction = 1, ):
+def porosity_profile(img, axis = None, sample_type = None, void_fraction = 1):
     """
     This function calculates porosity for each slice
     and return a list of porosity values for all slices
@@ -51,15 +51,6 @@ def porosity_profile(img, axis = None, sample_type = None, void_fraction = 1, ):
     img = img.copy();
     phi = [];
     
-    #Convert image to (pixel_I <= 1)
-#     if (np.max(img) > 0 & np.max(img < 255)): #Test for 8-bit image
-#         img = img/255;
-
-    if (np.max(img) > 256 & np.max(img) < 255**2): #Convert 16 bit to 8 bit image
-        img = (img/255).astype(np.uint8);
-    elif (np.max(img) > 255**2):                   #Convert 32 bit to 8 bit image
-        img = (img/255**2).astype(np.uint8);        
-
     
     if (sample_type == '3_Phase'):
         for i in img:
@@ -67,14 +58,17 @@ def porosity_profile(img, axis = None, sample_type = None, void_fraction = 1, ):
             phi.append(100*np.sum(i[i>0])/n/255);
             
     elif (sample_type == 'Linda_et_al'):
-        for i in img:
-            n = i[i > 0].size
-            phi_m = np.sum(i[i==255]);
-            phi_g = np.sum(i[i==1]);
-            tmp = i[i < 255];
-            phi_micro =  np.sum(tmp[tmp>1])
-            porosity = ((phi_m + phi_g + volume_fraction*phi_micro)/n/255).astype(np.uint8)
-            phi.append(100*porosity)
+        #This part only calculate for one slice
+        i = img;
+        n = i[i > 0].size
+        phi_m = np.sum(i[i==255]);
+        phi_g = np.sum(i[i==1]);
+        tmp = i[i < 255];
+        phi_micro =  np.sum(tmp[tmp>1])
+        
+        porosity = (100*(phi_m + phi_g + void_fraction*phi_micro)/n/255)
+        phi.append(porosity)
+            
             
     elif (sample_type == 'Core_1_Phase'):
         print("This part is still need to implement");

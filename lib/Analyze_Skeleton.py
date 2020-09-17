@@ -92,8 +92,63 @@ class Analyze_Skeleton:
         self.isolated_nodes = list(nx.isolates(G_copy))
         G_copy.remove_nodes_from(self.isolated_nodes)
         self.G = G_copy            
-        return self.isolated_nodes
-            
+    
+    
+    def Nx_to_Mayavi(self):
+        
+        from mayavi import mlab
+        nop={} 
+       
+        node_pos = self.pos
+        for n in self.G.nodes(): 
+            try: 
+                nop[n]=node_pos[n] 
+            except KeyError: 
+                raise networkx.NetworkXError
+
+    # numpy array of x,y,z positions in sorted node order
+
+        xyz = np.array(list([[node_pos[v][0], node_pos[v][1], node_pos[v][2]] for v in self.G.nodes()]))
+        
+        scalars = np.ones((self.G.number_of_nodes()));
+        
+#         if self.outlet_node != 0:
+#             for i in range(len(scalars)):
+#                 if (node_pos[i] == self.inlet_node or node_pos[i] == self.outlet_node) :
+#                     scalars[i] = 5;
+#                 elif node_pos[i] in self.isolated_nodes:
+#                     scalars[i] = 0
+
+#         #Filling zeros at deleted nodes
+#         try:
+#             for i in self.isolated_nodes:
+
+#                 xyz[i][0] = 0
+#                 xyz[i][1] = 0
+#                 xyz[i][2] = 0
+
+
+#         except:
+#             pass
+        
+        pts = mlab.points3d(
+        xyz[:, 0],
+        xyz[:, 1],
+        xyz[:, 2],
+#        scalars,
+        scale_factor=1,
+        #scale_mode="none",
+        #colormap="Blues",
+        #resolution=20,
+        #color=(1,0,0)
+        )
+
+        pts.mlab_source.dataset.lines = np.array(list(self.G.edges()))
+        tube = mlab.pipeline.tube(pts, tube_radius=0.1)
+        mlab.pipeline.surface(tube, color=(1, 0., 0.))
+        mlab.show()
+    
+    
     def Nx_to_vtk(self, addtional_suffix = ''): 
         """
         This function is written using VTK module
@@ -147,7 +202,7 @@ class Analyze_Skeleton:
         edgeData.SetLines(lines)
 
         writer = vtk.vtkXMLPolyDataWriter();
-        writer.SetFileName(str(self.suffix)+ addtional_suffix +".vtp");
+        writer.SetFileName(str(self.suffix).strip('.tif')+ addtional_suffix +".vtp");
 
         writer.SetInputData(edgeData)
         writer.Write()
@@ -236,13 +291,20 @@ class Analyze_Skeleton:
                     
         
         
-    def Find_Dominant_Wormhole(self):
+    def Find_Dominant_Wormhole(self, outlet_node = 0):
         #This function works best for 3D images, because of uncertainity in choosing
         # Inlet and Outlet node in 2D
         #No. of slices should be in Z-Axis (i.e First axis here)
         
         print("Finding dominant wormhole")
-        outlet_node_found = False
+        if outlet_node == 0:
+            outlet_node_found = False
+        else:
+            outlet_node_found = True
+            outletz = outlet_node
+            print("\n Node-"+ str(outletz) + ", provided by user is connected and chosen outlet node")
+            print("Cordinates of the outlet node is" + str(self.node_cordinates[outletz]))
+            
         inlet_in_isolated_node = False
         
         
@@ -266,6 +328,7 @@ class Analyze_Skeleton:
                 inlet_in_isolated_node = True
             else:
                 print("Node-"+ str(inletz) + " is connected and chosen as source node")
+                print("Cordinates of the inlet node is " + str(self.node_cordinates[inletz]))
                 inlet_in_isolated_node = False
                 break;
       
@@ -278,6 +341,7 @@ class Analyze_Skeleton:
                 nx.shortest_path(self.G, inletz,  outletz)
                 outlet_node_found = True
                 print("\n Node-"+ str(outletz) + " is connected and chosen as outlet node")
+                print("Cordinates of the outlet node is" + str(self.node_cordinates[outletz]))
                 
             except Exception:
                 print("Node-" + str(non) + " is not connected to Node-" + str(inletz))
