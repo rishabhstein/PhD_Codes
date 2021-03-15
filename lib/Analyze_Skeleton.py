@@ -1,4 +1,4 @@
-from skan import skeleton_to_csgraph, summarize
+from skan import skeleton_to_csgraph, summarize, Skeleton
 import networkx as nx
 import numpy as np
 import vtk 
@@ -83,18 +83,72 @@ class Analyze_Skeleton:
         for n, p in self.pos.items():
             self.G.nodes[n]['pos'] = p
 
+    
+    def Simplified_skeleton_for_Mariusz(self, tmp_G = 0, tmp_img = 0, update_G = False):
+
+        """
+        This function removes the intermediate nodes(with only two connectivity/degree)
+        between two junction nodes and replace it with one branch according to the 
+        requirement for Mariusz
+
+        """
+        
+        print("WARNING: This function convert cordinates to 3D which will throw error for 2D plotting using nx_draw")
+
+        
+        if tmp_G == 0:
+            G_simplified = self.G.copy();
+            img = self.skeletonized_image;
+        elif type(tmp_G) != 'int':
+            G_simplified = tmp_G.copy();
+            img = tmp_img;
             
+        for i in self.G.degree:
+
+            if i[1] == 2:
+
+                node = i[0];
+                edges = self.G.edges(node) if type(tmp_G) != 'int' else tmp_G.edges(node)
+                edges = list(edges.__iter__())
+
+                a0, b0 = edges[0];
+                a1, b1 = edges[1];
+
+                e0 = a0 if a0!=node else b0
+                e1 = a1 if a1!=node else b1
+
+                G_simplified.remove_node(node)
+
+
+        #Using skan to extract the junction to junction/end end points
+
+        data = summarize(Skeleton(img))
+
+        list_1 = data['node-id-src']
+        list_2 = data['node-id-dst']
+
+        for i,j in zip(list_1,list_2):
+            G_simplified.add_edge(i,j)
+
+           
+        if update_G is True:
+                self.G = G_simplified
+                
+        return G_simplified
+    
+    
+    
     def Remove_isolated_nodes(self):
         
         #This function delete the isolated nodes and return it
 
-        G_copy = self.G
+        G_copy = self.G.copy()
         self.isolated_nodes = list(nx.isolates(G_copy))
         G_copy.remove_nodes_from(self.isolated_nodes)
         self.G = G_copy            
     
     
-    def Nx_to_Mayavi(self):
+    def Nx_to_Mayavi(self, tmp_G = 0):
         
         from mayavi import mlab
         nop={} 
@@ -135,12 +189,9 @@ class Analyze_Skeleton:
         xyz[:, 0],
         xyz[:, 1],
         xyz[:, 2],
-#        scalars,
+
         scale_factor=1,
-        #scale_mode="none",
-        #colormap="Blues",
-        #resolution=20,
-        #color=(1,0,0)
+
         )
 
         pts.mlab_source.dataset.lines = np.array(list(self.G.edges()))
@@ -291,20 +342,13 @@ class Analyze_Skeleton:
                     
         
         
-    def Find_Dominant_Wormhole(self, outlet_node = 0):
+    def Find_Dominant_Wormhole(self, outlet_node = 0, given_inlet_node = 'NULL'):
         #This function works best for 3D images, because of uncertainity in choosing
         # Inlet and Outlet node in 2D
         #No. of slices should be in Z-Axis (i.e First axis here)
         
         print("Finding dominant wormhole")
-        if outlet_node == 0:
-            outlet_node_found = False
-        else:
-            outlet_node_found = True
-            outletz = outlet_node
-            print("\n Node-"+ str(outletz) + ", provided by user is connected and chosen outlet node")
-            print("Cordinates of the outlet node is" + str(self.node_cordinates[outletz]))
-            
+
         inlet_in_isolated_node = False
         
         
@@ -313,33 +357,49 @@ class Analyze_Skeleton:
         print("%=====================Looking for Inlet node=========================%\n")
         inletz, _, _ = np.argmin(self.node_cordinates, axis=0)
         
-        if inletz in self.isolated_nodes: 
-            print("Node-" + str(inletz) + "is not connected to main wormhole")
-            inlet_in_isolated_node = True
-            tmp_io = 0;
-            
-        while (inlet_in_isolated_node):
-            
-            tmp_io += 1 ;
-            inletz = tmp_io + np.argmin(self.node_cordinates[tmp_io:non, 0]) #tmp_ioo is added because location of minimum z is always zero if element is excluded
-
+        if given_inlet_node == 'NULL':
             if inletz in self.isolated_nodes: 
                 print("Node-" + str(inletz) + "is not connected to main wormhole")
                 inlet_in_isolated_node = True
-            else:
-                print("Node-"+ str(inletz) + " is connected and chosen as source node")
-                print("Cordinates of the inlet node is " + str(self.node_cordinates[inletz]))
-                inlet_in_isolated_node = False
-                break;
-      
+                tmp_io = 0;
+
+            while (inlet_in_isolated_node):
+
+                tmp_io += 1 ;
+                inletz = tmp_io + np.argmin(self.node_cordinates[tmp_io:non, 0]) #tmp_ioo is added because location of minimum z is always zero if element is excluded
+
+                if inletz in self.isolated_nodes: 
+                    print("Node-" + str(inletz) + "is not connected to main wormhole")
+                    inlet_in_isolated_node = True
+                else:
+                    print("Node-"+ str(inletz) + " is connected and chosen as source node")
+                    print("Cordinates of the inlet node is " + str(self.node_cordinates[inletz]))
+                    inlet_in_isolated_node = False
+                    break;
+        else:
+            inletz = given_inlet_node
+            print("\n Node-"+ str(inletz) + ", provided by user is chosen as inlet node")
+            print("Cordinates of the inlet node is " + str(self.node_cordinates[inletz]))
+    
         print("%=====================Looking for Outlet node=========================%\n")     
+        
+        if outlet_node == 0:
+            outlet_node_found = False
+        else:
+            outlet_node_found = True
+            outletz = outlet_node
+            print("\n Node-"+ str(outletz) + ", provided by user is connected and chosen outlet node")
+            print("Cordinates of the outlet node is" + str(self.node_cordinates[outletz]))
+            
+                
         i = 0;
         while (outlet_node_found == False and i < 30):
                 
             try:
                 outletz = np.argmax(self.node_cordinates[0:non, 0])
-                nx.shortest_path(self.G, inletz,  outletz)
+                short_path = nx.shortest_path(self.G, inletz,  outletz)
                 outlet_node_found = True
+              
                 print("\n Node-"+ str(outletz) + " is connected and chosen as outlet node")
                 print("Cordinates of the outlet node is" + str(self.node_cordinates[outletz]))
                 
@@ -366,8 +426,10 @@ class Analyze_Skeleton:
         return self.length_of_wormhole/self.node_cordinates[self.outlet_node][0]        
         
     def Wastefulness(self):
-        #Using sum of sparce matrix but every connection is doubled so dividee by half
+        #Using sum of sparce matrix but every connection is doubled so divided by half
+        
         sum_of_all_branches_including_wormhole = self.node_connection.sum()/2
+        
         return sum_of_all_branches_including_wormhole/self.node_cordinates[self.outlet_node][0]
         
     def Horton_number(self):

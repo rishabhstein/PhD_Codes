@@ -1,7 +1,11 @@
 from skimage import measure, morphology, segmentation
 from skimage.morphology import reconstruction, skeletonize_3d
 import scipy.ndimage.morphology as morph
+from scipy import ndimage
 from pylab import *
+
+from tifffile import imsave as tifsave
+from skimage import util 
 
 import sys
 sys.path.append('../')
@@ -32,7 +36,7 @@ class Wormhole_from_tomography:
 
     def Connected_components_extraction(self, th_value, point):
                                       
-        z,x,y = point;
+        z, x, y = point;
         
         #Segmentation
         mask = self.wormhole_from_differencing_stack >= th_value
@@ -42,14 +46,26 @@ class Wormhole_from_tomography:
         self.Volume_of_wormhole = self.filled_wormhole.sum()
         
         return self.Volume_of_wormhole, self.filled_wormhole
+    
+    
+    def Connected_component_extraction_of_binary_wormholes(self, mask_img, point):
+        z, x, y = point;
         
+        self.filled_wormhole = segmentation.flood(mask_img, (z, y, x), connectivity = 1)
 
-    def Fill_holes_in_wormhole(self):
+        #Unfilled wormhole's volume
+        self.Volume_of_wormhole = self.filled_wormhole.sum()
+        
+        return self.Volume_of_wormhole, self.filled_wormhole
+    
+
+    def Fill_holes_in_wormhole(self, if_update_volume = True):
         unfilled_wormhole_copy = self.filled_wormhole
         self.filled_wormhole = morph.binary_fill_holes(unfilled_wormhole_copy)
                                         
-        self.Volume_of_wormhole = self.filled_wormhole.sum()
-        self.info['Volume_in_voxel'] = self.Volume_of_wormhole
+        if if_update_volume:
+            self.Volume_of_wormhole = self.filled_wormhole.sum()
+            self.info['Volume_in_voxel'] = self.Volume_of_wormhole
         
         return self.Volume_of_wormhole, self.filled_wormhole
         
@@ -135,35 +151,60 @@ class Wormhole_from_tomography:
         return vol_tmp, sa_tmp
     
     
-    def Save_extracted_wormhole(self):
-        from tifffile import imsave
-        imsave(self.info['File_name'], self.filled_wormhole, dtype = int)
+    def Save_extracted_wormhole(self, save_as_bool = True):
+
+        bool_img = self.filled_wormhole
+        
+        if save_as_bool:
+            tifsave(self.info['File_name'], bool_img, dtype = uint8)
+        else:
+            img_uint8 =  np.uint8(bool_img * 255)
+            tifsave(self.info['File_name'], img_uint8, dtype = uint8)
     
 
-    def Skeletonise_the_wormhole(self, outlet_node = 0):
-        from scipy import ndimage
-        filterd_image = ndimage.median_filter(self.filled_wormhole, size = 2)
+    def Apply_median_filter(self, filter_size = 2):
+        self.filled_wormhole = ndimage.median_filter(self.filled_wormhole, size = filter_size)
         
-        skeleton = skeletonize_3d(filterd_image)
+    def Skeletonise_the_wormhole(self, outlet_node = 0, 
+                                 inlet_node = 'NULL',
+                                 if_apply_median_filter = True,
+                                 if_save_skeleton_tif = False):
+        
+        if if_apply_median_filter:
+            filterd_image = ndimage.median_filter(self.filled_wormhole, size = 2)
+            skeleton = skeletonize_3d(filterd_image)
+        else:
+            skeleton = skeletonize_3d(self.filled_wormhole)
+            
+        if if_save_skeleton_tif:
+            skeleton_file_name = self.info['File_name'].strip('.tif') + '_skeleton.tif'
+            tifsave(skeleton_file_name, skeleton, dtype = uint8)
+            
+        
         load_skeleton = AS.Analyze_Skeleton(skeleton, suffix = self.info['File_name'])
         load_skeleton.Skeletonized_image_to_NetworkX_Graph()
         isolated_node = load_skeleton.Remove_isolated_nodes()
+        load_skeleton.Nx_to_vtk();
         
-        length_of_wormhole, wormhole_network_graph = load_skeleton.Find_Dominant_Wormhole(outlet_node = outlet_node)
+        length_of_wormhole, wormhole_network_graph = load_skeleton.Find_Dominant_Wormhole(outlet_node = outlet_node, 
+                                                                                          given_inlet_node = inlet_node)
         
         self.info['Length_of_wormhole'] = length_of_wormhole 
         self.info['Length_of_wormhole_cm'] = length_of_wormhole * self.info['voxel_size'] * 1e-4
         self.info['Tortuosity'] = load_skeleton.Tortuosity()
         self.info['Wastefullness'] = load_skeleton.Wastefulness()
         
-        load_skeleton.Nx_to_vtk();
+
         return wormhole_network_graph
     
     
     
+
+######## Not a part of CLASS###########
     
     
-def find_linear_region_of_curve(data, window_of_linearity = 10,                                   
+    
+def Find_linear_region_of_curve(data, window_of_linearity = 10,                                   
                                 closeness_to_zero_derv_one = 2, 
                                 closeness_to_zero_derv_two = 2,
                                 step = 10):
@@ -197,7 +238,7 @@ def find_linear_region_of_curve(data, window_of_linearity = 10,
     return 0;
 
 
-def find_threshold_with_10_percent_volume_decrement(data, Min_Threshold_index):
+def Find_threshold_with_10_percent_volume_decrement(data, Min_Threshold_index):
     list_volume = []
     list_volume.append(Min_Threshold_index)
     def count_iteration(count):
@@ -223,3 +264,36 @@ def find_threshold_with_10_percent_volume_decrement(data, Min_Threshold_index):
 
             
     return list_volume
+
+
+def Find_tip_position_from_binary_tiff_stack_by_maximum_z(img):
+    """
+    INPUT:
+        Binary image of extracted wormhole
+
+    RETURN:
+        The tip position
+
+
+        1.    This function gives a rough idea of extracting tip in the slice by finiding the closest slice to OUTPUT
+        or Max(z). 
+        2. Assumption is that there is only one tip at that slice because it takes average of white pixel in that slice
+
+    """
+    pz, px, py = np.shape(img)
+    if np.max(img) == 255:
+        img_max = 255
+    else:
+        img_max = 1
+
+    for i in range(pz-1, 0, -1):
+        if img[i].any() == img_max:
+            tip_z = i
+            tip_y, tip_x = np.where(img[i] == img_max)
+            tip_x = int(np.mean(tip_x))
+            tip_y = int(np.mean(tip_y))
+
+            # px - tip_x is used to match the origin for paraview
+            return tip_x, py-tip_y, tip_z 
+    return 0
+    

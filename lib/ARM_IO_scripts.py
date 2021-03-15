@@ -7,6 +7,7 @@ Created on Thu May 17 12:50:27 2020
 
 import numpy as np
 from pathlib import Path
+import vtk
 
 def load_ARM_data(path, prefix = '', time = 'First', file_type = '.out'):
     """ This function reads the output data of network model
@@ -114,6 +115,135 @@ def load_ARM_data(path, prefix = '', time = 'First', file_type = '.out'):
         network['flow_rate'] =np.vstack(flow_after_trimming)
 
     return network
+
+
+def load_ARM_data_fromVTK(file_name):
+    
+    """This function reads the Network model output VTK files
+        ==========================
+        "Without Pore-Merging"
+        ==========================
+        and returns a Dictionary containing points and scalars in the file
+        
+        INPUT:
+            VTK file saved during simulations
+           
+        OUTPUT:
+            A Dictionary containing cordinates of network points and all scalar fields
+               
+    """
+    #Dictionary where the data of VTK file
+    scalars = {}
+    
+    reader = vtk.vtkGenericDataObjectReader()
+    reader.SetFileName(file_name)
+    reader.ReadAllScalarsOn()
+    reader.Update()
+
+    data = reader.GetOutput()
+
+    points = np.array(data.GetPoints().GetData())
+    pointdata = data.GetPointData()
+    celldata = data.GetCellData()
+
+    #Extracting Cell bounds or pore nodes
+    CellArray = data.GetCells()
+    pores = CellArray.GetData()
+    no_of_pores = CellArray.GetNumberOfCells()
+    
+    pores_array = np.array(pores)
+    list_of_pore_connection = []
+
+    for i in range(no_of_pores):
+        list_of_pore_connection.append([pores_array[j] for j in range(i*3, i*3+3)])
+    scalars['Cell_Nodes'] = list_of_pore_connection;
+    
+    #No of properties saved in VTK files
+    no_of_fields = reader.GetNumberOfScalarsInFile() 
+
+    scalars['Points'] = points;
+    for i in range(no_of_fields): 
+        name_of_field = reader.GetScalarsNameInFile(i)
+        scalars[name_of_field] = np.array(celldata.GetArray(name_of_field))
+           
+                
+    return scalars
+
+
+
+def Diameter_based_tip_position(LIST_OF_VTK_FILES, beta_d = 2):
+    """
+    This function takes input of network.vtk files and extract 
+    tip position of wormhole based on evolved diameters
+    
+    d_evolved >= beta_d * d_initial
+    
+    Input:
+        1. List of VTK files including path
+        2. beta_d ratio of d_evolved/d_initial
+        
+    Output:
+        List of tip_position
+        
+    """
+    tip_position_d = [];
+    data = load_ARM_data_fromVTK(LIST_OF_VTK_FILES[0]); #First file 'network_0.vtk'
+    
+    for i in LIST_OF_VTK_FILES[1:]:
+        data2 = load_ARM_data_fromVTK(i) #iterating over all other vtk files
+        
+        dissolved_media_d = (data2['Diameter'] > beta_d*data['Diameter'])
+        tmp_d = [i for i, x in enumerate(dissolved_media_d) if x]
+        
+        dissolved_pore_connections = [data2['Cell_Nodes'][j] for j in tmp_d]
+
+        list_centroid_pores = [];
+        for k in range(len(dissolved_pore_connections)):
+            node_1 = dissolved_pore_connections[k][1] #Node-1 connected to Pore
+            node_2 = dissolved_pore_connections[k][2] #Node-2 connected to Pore
+            list_centroid_pores.append((data2['Points'][node_1][1] + data2['Points'][node_2][1])/2.0)
+
+        if len(list_centroid_pores) != 0 :
+            tip_position_d.append(np.max(list_centroid_pores))
+    return np.sort(tip_position_d)
+        
+    
+    
+def Concentration_based_tip_position(LIST_OF_VTK_FILES, beta_c = 0.1):
+    """
+    This function takes input of network_%d.vtk files and extract 
+    tip position of wormhole based on evolved Concentration
+    
+    c_evolved < beta_c
+    
+    Input:
+        1. List of VTK files including path
+        2. beta_d ratio of d_evolved/d_initial
+        
+    Output:
+        List of tip_positions
+        
+    """
+    
+    tip_position_c = [];
+    data = load_ARM_data_fromVTK(LIST_OF_VTK_FILES[0]);
+    
+    for i in LIST_OF_VTK_FILES[1:]:
+        data2 = load_ARM_data_fromVTK(i)
+        dissolved_media_c = (data2['Concentration'] > beta_c)
+        tmp_c = [i for i, x in enumerate(dissolved_media_c) if x]
+        
+        dissolved_pore_connections = [data2['Cell_Nodes'][j] for j in tmp_c]
+
+        list_centroid_pores = [];
+        for k in range(len(dissolved_pore_connections)):
+            node_1 = dissolved_pore_connections[k][1] #Node-1 connected to Pore
+            node_2 = dissolved_pore_connections[k][2] #Node-2 connected to Pore
+            list_centroid_pores.append((data2['Points'][node_1][1] + data2['Points'][node_2][1])/2.0)
+
+        if len(list_centroid_pores) != 0 :
+            tip_position_c.append(np.max(list_centroid_pores))
+    return np.sort(tip_position_c)
 
 
 def ARM_VTKtoCSV(path_to_fileIn, path_to_fileOut, fname):
