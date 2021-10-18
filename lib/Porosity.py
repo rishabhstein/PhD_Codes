@@ -70,7 +70,7 @@ def porosity_profile(img, axis = None, sample_type = None, void_fraction = 1):
         phi.append(porosity)
             
             
-    elif (sample_type == 'Core_1_Phase'):
+    elif (sample_type == 'Core_2_Phase'):
         print("This part is still need to implement");
         
     elif (sample_type == 'Crop_1_Phase'):
@@ -80,6 +80,24 @@ def porosity_profile(img, axis = None, sample_type = None, void_fraction = 1):
             
     return phi;
 
+
+
+def n_weighted_moment(values, weights, n):
+    values = np.array(values)
+    if weights == 1:
+        weights = np.ones(values.shape)
+        
+    assert n>0 & (values.shape == weights.shape)
+    w_avg = np.average(values, weights = weights)
+    w_var = np.sum(weights * (values - w_avg)**2)/np.sum(weights)
+
+    if n==1:
+        return w_avg
+    elif n==2:
+        return w_var
+    else:
+        w_std = np.sqrt(w_var)
+        return np.sum(weights * ((values - w_avg)/w_std)**n)/np.sum(weights)
 
 
 

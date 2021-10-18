@@ -17,7 +17,7 @@ FoamFile
 
 dimensions      [0 0 0 0 0 0 0];
 
-internalField   uniform 1;
+internalField   uniform 0;
 
 boundaryField
 {
@@ -31,19 +31,19 @@ boundaryField
     }
     y1
     {
-        type            zeroGradient;
+        type            cyclic;
     }
     y2
     {
-        type            zeroGradient;
+        type            cyclic;
     }
     z1
     {
-        type            zeroGradient;
+        type            empty;
     }
     z2
     {
-        type            zeroGradient;
+        type            empty;
     }
 }
 
